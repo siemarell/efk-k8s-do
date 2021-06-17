@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logging-proxy-config
+  namespace: kube-logging
+  labels:
+    project: logging
+data:
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  ENDPOINT: "<your elastic service endpoint>"
+---
+apiVersion: apps/v1 # for versions before 1.8.0 use apps/v1beta1
+kind: Deployment
+metadata:
+  name: es-proxy
+  namespace: kube-logging
+  labels:
+    app: es-proxy
+spec:
+  selector:
+    matchLabels:
+      app: es-proxy
+  strategy:
+    type: Recreate
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: es-proxy
+    spec:
+      volumes:
+      - name: varlog
+        emptyDir: {}
+      containers:
+      - image: abutaha/aws-es-proxy:v1.1 #built using a go based es-proxy
+        name: es-proxy
+        command:
+          - "aws-es-proxy"
+        args: ["-listen", "0.0.0.0:9200", "-verbose", "-debug"]
+        envFrom:
+          - configMapRef:
+              name: logging-proxy-config
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: es-proxy
+  namespace: kube-logging
+  labels:
+    app: es-proxy
+spec:
+  ports:
+    - port: 9200
+      name: http-es-proxy
+  selector:
+    app: es-proxy
+  clusterIP: None
